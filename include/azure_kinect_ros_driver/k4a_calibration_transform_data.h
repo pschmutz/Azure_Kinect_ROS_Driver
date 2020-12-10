@@ -61,10 +61,12 @@ private:
   void publishImuToDepthTf();
   void publishDepthToBaseTf();
 
+  tf2_ros::StaticTransformBroadcaster static_broadcaster_;
+
+public:
   tf2::Quaternion getDepthToBaseRotationCorrection();
   tf2::Vector3 getDepthToBaseTranslationCorrection();
 
-  tf2_ros::StaticTransformBroadcaster static_broadcaster_;
 };
 
 #endif

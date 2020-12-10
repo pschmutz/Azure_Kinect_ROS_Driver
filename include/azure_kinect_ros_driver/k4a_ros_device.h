@@ -26,7 +26,10 @@
 
 #if defined(K4A_BODY_TRACKING)
 #include <visualization_msgs/MarkerArray.h>
+#include <spencer_tracking_msgs/DetectedPersons.h>
+#include <spencer_tracking_msgs/DetectedPerson.h>
 #include <k4abt.hpp>
+#include <tf2_ros/transform_listener.h>
 #endif
 
 // Project headers
@@ -69,6 +72,10 @@ class K4AROSDevice
 #if defined(K4A_BODY_TRACKING)
   k4a_result_t getBodyMarker(const k4abt_body_t& body, visualization_msgs::MarkerPtr marker_msg, int jointType,
                              ros::Time capture_time);
+
+  k4a_result_t getDetectedPersons(k4abt::frame& body_frame,
+                                 spencer_tracking_msgs::DetectedPersonsPtr detected_persons,
+                                 ros::Time capture_time);
 
   k4a_result_t getBodyIndexMap(const k4abt::frame& body_frame, sensor_msgs::ImagePtr body_index_map_image);
 
@@ -136,7 +143,12 @@ class K4AROSDevice
   ros::Publisher pointcloud_publisher_;
 
 #if defined(K4A_BODY_TRACKING)
-  ros::Publisher body_marker_publisher_;
+    ros::Publisher body_marker_publisher_;
+    ros::Publisher detected_persons_publisher_;
+
+
+    tf2_ros::Buffer tfBuffer;
+    tf2_ros::TransformListener tfListener;
 
   image_transport::Publisher body_index_map_publisher_;
 #endif

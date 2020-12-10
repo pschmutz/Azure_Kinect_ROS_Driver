@@ -21,6 +21,7 @@ find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
   nodelet
   cv_bridge
+  spencer_tracking_msgs
 )
 
 ###################################
@@ -109,6 +110,8 @@ include(Installk4a)
 ###### END AZURE KINECT SDK ######
 ##################################
 
+find_package(Eigen3 REQUIRED)
+
 include_directories(
   ${catkin_INCLUDE_DIRS}
   "include"
@@ -117,11 +120,13 @@ include_directories(
 target_link_libraries(${PROJECT_NAME}_node
   ${K4A_LIBS}
   ${catkin_LIBRARIES}
+  Eigen3::Eigen
 )
 
 target_link_libraries(${PROJECT_NAME}_nodelet
   ${K4A_LIBS}
   ${catkin_LIBRARIES}
+  Eigen3::Eigen
 )
 
 #############

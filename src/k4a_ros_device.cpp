@@ -18,6 +18,12 @@
 #include <sensor_msgs/image_encodings.h>
 #include <sensor_msgs/point_cloud2_iterator.h>
 #include <k4a/k4a.hpp>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+
+#if defined(K4A_BODY_TRACKING)
+#include "Eigen/Dense"
+#endif
+
 
 // Project headers
 //
@@ -30,6 +36,7 @@ using namespace std;
 
 #if defined(K4A_BODY_TRACKING)
 using namespace visualization_msgs;
+using namespace spencer_tracking_msgs;
 #endif
 
 K4AROSDevice::K4AROSDevice(const NodeHandle& n, const NodeHandle& p)
@@ -38,6 +45,7 @@ K4AROSDevice::K4AROSDevice(const NodeHandle& n, const NodeHandle& p)
 // clang-format off
 #if defined(K4A_BODY_TRACKING)
     k4abt_tracker_(nullptr),
+    tfListener(tfBuffer),
 #endif
     // clang-format on
     node_(n),
@@ -241,6 +249,7 @@ K4AROSDevice::K4AROSDevice(const NodeHandle& n, const NodeHandle& p)
 #if defined(K4A_BODY_TRACKING)
   if (params_.body_tracking_enabled) {
     body_marker_publisher_ = node_.advertise<MarkerArray>("body_tracking_data", 1);
+    detected_persons_publisher_ = node_.advertise<DetectedPersons>("detected_persons", 1);
 
     body_index_map_publisher_ = image_transport_.advertise("body_index_map/image_raw", 1);
   }
@@ -742,6 +751,86 @@ k4a_result_t K4AROSDevice::getBodyMarker(const k4abt_body_t& body, MarkerPtr mar
   return K4A_RESULT_SUCCEEDED;
 }
 
+k4a_result_t K4AROSDevice::getDetectedPersons(k4abt::frame& body_frame,
+                                             DetectedPersonsPtr detected_persons,
+                                             ros::Time capture_time)
+{
+  detected_persons->header.frame_id = calibration_data_.tf_prefix_ + calibration_data_.camera_base_frame_;
+  detected_persons->header.stamp = capture_time;
+
+  auto num_bodies = body_frame.get_num_bodies();
+  for (size_t i = 0; i < num_bodies; ++i)
+  {
+    k4abt_body_t body = body_frame.get_body(i);
+
+    auto& confidence_level = body.skeleton.joints[k4abt_joint_id_t::K4ABT_JOINT_PELVIS].confidence_level;
+    auto& position = body.skeleton.joints[k4abt_joint_id_t::K4ABT_JOINT_PELVIS].position;
+    auto& orientation_k4a = body.skeleton.joints[k4abt_joint_id_t::K4ABT_JOINT_PELVIS].orientation;
+
+    if (confidence_level == k4abt_joint_confidence_level_t::K4ABT_JOINT_CONFIDENCE_NONE) continue;
+
+
+    DetectedPerson detected_person;
+    detected_person.modality = DetectedPerson::MODALITY_GENERIC_RGBD;
+    detected_person.confidence = confidence_level / 3.0;
+    detected_person.detection_id=body.id;
+
+    geometry_msgs::PoseStamped pose;
+
+    pose.header.stamp = capture_time;
+    pose.header.frame_id = calibration_data_.tf_prefix_ + calibration_data_.depth_camera_frame_;
+
+    pose.pose.position.x = position.xyz.x / 1000.0f;
+    pose.pose.position.y = position.xyz.y / 1000.0f;
+    pose.pose.position.z = position.xyz.z / 1000.0f;
+
+    pose.pose.orientation.x = orientation_k4a.wxyz.x;
+    pose.pose.orientation.y = orientation_k4a.wxyz.y;
+    pose.pose.orientation.z = orientation_k4a.wxyz.z;
+    pose.pose.orientation.w = orientation_k4a.wxyz.w;
+
+
+
+    tfBuffer.transform(pose, pose, calibration_data_.tf_prefix_ + calibration_data_.camera_base_frame_);
+
+    // The kinect coordinate system is different
+    tf2::Quaternion rotation_into_spencer_representation;
+    rotation_into_spencer_representation.setRPY(M_PI/2.0, 0.0, M_PI / 2.0);
+
+    tf2::Quaternion q_orig, q_rot_1, q_rot_2, q_new;
+
+    // Get the original orientation of 'commanded_pose'
+    tf2::convert(pose.pose.orientation , q_orig);
+
+    q_rot_1.setRPY(0, 3.14/2, 0);
+    q_rot_2.setRPY(0, 0, 3.14/2);
+    
+    q_new = q_orig * q_rot_1 * q_rot_2;  // Calculate the new orientation
+    q_new.normalize();
+
+    // Stuff the new rotation back into the pose. This requires conversion into a msg type
+    tf2::convert(q_new, pose.pose.orientation);
+
+    detected_person.pose.pose = pose.pose;
+
+
+    // Map the array representing the covatiance matrix into an eigen matrix for easy access
+    Eigen::Map<Eigen::Matrix<double, 6,6 >> covariance_matrix(detected_person.pose.covariance.c_array());
+
+    covariance_matrix.diagonal()[0] = 0.5;
+    covariance_matrix.diagonal()[1] = 0.5;
+    covariance_matrix.diagonal()[2] = 0.5;
+    covariance_matrix.diagonal()[3] = 10000.;
+    covariance_matrix.diagonal()[4] = 10000.;
+    covariance_matrix.diagonal()[5] = 10000.;
+
+    detected_persons->detections.push_back(detected_person);
+
+  }
+
+  return K4A_RESULT_SUCCEEDED;
+}
+
 k4a_result_t K4AROSDevice::getBodyIndexMap(const k4abt::frame& body_frame, sensor_msgs::ImagePtr body_index_map_image)
 {
   k4a::image k4a_body_index_map = body_frame.get_body_index_map();
@@ -975,7 +1064,9 @@ void K4AROSDevice::framePublisherThread()
 #if defined(K4A_BODY_TRACKING)
         // Publish body markers when body tracking is enabled and a depth image is available
         if (params_.body_tracking_enabled &&
-            (body_marker_publisher_.getNumSubscribers() > 0 || body_index_map_publisher_.getNumSubscribers() > 0))
+            (body_marker_publisher_.getNumSubscribers() > 0
+             || body_index_map_publisher_.getNumSubscribers() > 0
+             || detected_persons_publisher_.getNumSubscribers() > 0))
         {
           capture_time = timestampToROS(capture.get_depth_image().get_device_timestamp());
 
@@ -1012,6 +1103,14 @@ void K4AROSDevice::framePublisherThread()
                   }
                 }
                 body_marker_publisher_.publish(markerArrayPtr);
+              }
+
+              if (detected_persons_publisher_.getNumSubscribers() > 0)
+              {
+                // Joint marker array
+                spencer_tracking_msgs::DetectedPersonsPtr detectedPersonsPtr(new spencer_tracking_msgs::DetectedPersons);
+                getDetectedPersons(body_frame, detectedPersonsPtr, capture_time);
+                detected_persons_publisher_.publish(detectedPersonsPtr);
               }
 
               if (body_index_map_publisher_.getNumSubscribers() > 0)
