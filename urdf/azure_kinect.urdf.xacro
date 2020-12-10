@@ -5,7 +5,7 @@
  -->
 
 <robot name="azure-kinect" xmlns:xacro="http://www.ros.org/wiki/xacro">
-  <xacro:arg name="tf_prefix" default=""/>
+  <xacro:arg name="tf_prefix" default="azure_kinect_front_"/>
   <material name="black">
     <color rgba="0. 0. 0. 1" />
   </material>
