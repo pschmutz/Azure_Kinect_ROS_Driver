@@ -75,6 +75,9 @@
   LIST_ENTRY(wired_sync_mode,                                                                                          \
               "Wired sync mode (0: OFF, 1: MASTER, 2: SUBORDINATE.",                                                   \
               int, 0)                                                                                                  \
+  LIST_ENTRY(sensor_orientation,                                                                                          \
+              "Sensor orientation (0: DEFAULT, 1: CLOCKWISE90 , 2: COUNTERCLOCKWISE90, 3: FLIP180 .",                                                   \
+              int, 0)                                                                                                  \
   LIST_ENTRY(subordinate_delay_off_master_usec,                                                                        \
               "Delay subordinate camera off master camera by specified amount in usec.",                               \
               int, 0)
