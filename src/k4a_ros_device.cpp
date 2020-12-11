@@ -757,7 +757,7 @@ k4a_result_t K4AROSDevice::getDetectedPersons(k4abt::frame& body_frame,
                                              DetectedPersonsPtr detected_persons,
                                              ros::Time capture_time)
 {
-  detected_persons->header.frame_id = calibration_data_.tf_prefix_ + calibration_data_.camera_base_frame_;
+  detected_persons->header.frame_id = "odom";
   detected_persons->header.stamp = capture_time;
 
   auto num_bodies = body_frame.get_num_bodies();
@@ -793,19 +793,15 @@ k4a_result_t K4AROSDevice::getDetectedPersons(k4abt::frame& body_frame,
 
 
 
-    tfBuffer.transform(pose, pose, calibration_data_.tf_prefix_ + calibration_data_.camera_base_frame_);
-
-    // The kinect coordinate system is different
-    tf2::Quaternion rotation_into_spencer_representation;
-    rotation_into_spencer_representation.setRPY(M_PI/2.0, 0.0, M_PI / 2.0);
+    tfBuffer.transform(pose, pose, "odom");
 
     tf2::Quaternion q_orig, q_rot_1, q_rot_2, q_new;
 
     // Get the original orientation of 'commanded_pose'
     tf2::convert(pose.pose.orientation , q_orig);
 
-    q_rot_1.setRPY(0, 3.14/2, 0);
-    q_rot_2.setRPY(0, 0, 3.14/2);
+    q_rot_1.setRPY(0, M_PI/2, 0);
+    q_rot_2.setRPY(0, 0, M_PI/2);
     
     q_new = q_orig * q_rot_1 * q_rot_2;  // Calculate the new orientation
     q_new.normalize();
